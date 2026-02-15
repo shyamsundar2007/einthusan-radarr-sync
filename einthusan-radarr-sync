@@ -1,0 +1,11 @@
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_DIR="$SCRIPT_DIR/.venv"
+
+if [ ! -d "$VENV_DIR" ]; then
+    echo "Setting up virtual environment..."
+    python3 -m venv "$VENV_DIR"
+    "$VENV_DIR/bin/pip" install -q requests beautifulsoup4
+fi
+
+exec "$VENV_DIR/bin/python" "$SCRIPT_DIR/einthusan-radarr-sync.py" "$@"

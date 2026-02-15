@@ -1,0 +1,221 @@
+#!/usr/bin/env python3
+"""
+Einthusan Login - Get fresh cookies via Playwright
+
+Usage:
+    ./einthusan-login.py                    # Interactive: prompts for credentials
+    ./einthusan-login.py --email X --pass Y # Direct credentials
+    ./einthusan-login.py --1password        # Get credentials from 1Password
+
+Saves cookies to ~/.config/einthusan/cookies.txt
+"""
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+try:
+    from playwright.sync_api import sync_playwright
+except ImportError:
+    print("Installing Playwright...")
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "playwright"])
+    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"])
+    from playwright.sync_api import sync_playwright
+
+CONFIG_DIR = Path.home() / ".config" / "einthusan"
+COOKIES_FILE = CONFIG_DIR / "cookies.txt"
+CREDENTIALS_FILE = CONFIG_DIR / "credentials.json"
+
+
+def get_credentials_from_1password() -> tuple[str, str]:
+    """Get Einthusan credentials from 1Password."""
+    try:
+        # Try to find einthusan item
+        result = subprocess.run(
+            ["op", "item", "get", "einthusan", "--format", "json"],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            item = json.loads(result.stdout)
+            email = None
+            password = None
+            for field in item.get("fields", []):
+                if field.get("id") == "username" or field.get("label") == "email":
+                    email = field.get("value")
+                elif field.get("id") == "password":
+                    password = field.get("value")
+            if email and password:
+                return email, password
+    except Exception as e:
+        print(f"1Password error: {e}")
+    return None, None
+
+
+def get_credentials_from_file() -> tuple[str, str]:
+    """Get credentials from local config file."""
+    if CREDENTIALS_FILE.exists():
+        try:
+            with open(CREDENTIALS_FILE) as f:
+                creds = json.load(f)
+                return creds.get("email"), creds.get("password")
+        except:
+            pass
+    return None, None
+
+
+def save_credentials(email: str, password: str):
+    """Save credentials to local config (for non-1password users)."""
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    with open(CREDENTIALS_FILE, "w") as f:
+        json.dump({"email": email, "password": password}, f)
+    os.chmod(CREDENTIALS_FILE, 0o600)
+    print(f"✓ Credentials saved to {CREDENTIALS_FILE}")
+
+
+def login_and_get_cookies(email: str, password: str, headless: bool = True) -> bool:
+    """Login to Einthusan and save cookies."""
+    print(f"🔐 Logging in as {email}...")
+    
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=headless)
+        context = browser.new_context()
+        page = context.new_page()
+        
+        try:
+            # Go to a movie page (has login popup)
+            page.goto("https://einthusan.tv/movie/browse/?lang=tamil", timeout=30000)
+            time.sleep(2)
+            
+            # Click on user icon or find login trigger
+            # Look for login elements
+            page.wait_for_selector("#login-email", timeout=5000)
+            
+        except:
+            # Try clicking something to trigger login popup
+            try:
+                # Find and click premium/login link
+                page.click('a[href*="/buy/"]', timeout=3000)
+            except:
+                pass
+            
+            try:
+                page.wait_for_selector("#login-email", timeout=5000)
+            except:
+                # Try going directly to a page that requires login
+                page.goto("https://einthusan.tv/feed/home/?lang=tamil", timeout=30000)
+                time.sleep(2)
+                page.wait_for_selector("#login-email", timeout=10000)
+        
+        # Fill login form
+        print("   Filling login form...")
+        page.fill("#login-email", email)
+        page.fill("#login-password", password)
+        
+        # Click login button
+        page.click("#login-submit")
+        
+        # Wait for login to complete
+        time.sleep(3)
+        
+        # Check if logged in by looking for user avatar or premium indicator
+        try:
+            page.wait_for_selector('a.avatar, [data-user]:not([data-user=""])', timeout=10000)
+            print("   ✓ Login successful!")
+        except:
+            print("   ⚠️ Login may have failed - saving cookies anyway")
+        
+        # Get cookies
+        cookies = context.cookies()
+        browser.close()
+        
+        if not cookies:
+            print("   ❌ No cookies obtained")
+            return False
+        
+        # Save in Netscape format
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(COOKIES_FILE, "w") as f:
+            f.write("# Netscape HTTP Cookie File\n")
+            f.write("# Generated by einthusan-login.py\n")
+            for cookie in cookies:
+                domain = cookie.get("domain", "")
+                if not domain.endswith("einthusan.tv"):
+                    continue
+                    
+                flag = "TRUE" if domain.startswith(".") else "FALSE"
+                path = cookie.get("path", "/")
+                secure = "TRUE" if cookie.get("secure") else "FALSE"
+                expires = int(cookie.get("expires", 0))
+                name = cookie.get("name", "")
+                value = cookie.get("value", "")
+                
+                f.write(f"{domain}\t{flag}\t{path}\t{secure}\t{expires}\t{name}\t{value}\n")
+        
+        os.chmod(COOKIES_FILE, 0o600)
+        print(f"✓ Cookies saved to {COOKIES_FILE}")
+        
+        # Count important cookies
+        important = ["sid", "tid", "_gorilla_csrf"]
+        found = [c["name"] for c in cookies if c["name"] in important]
+        print(f"   Session cookies: {', '.join(found)}")
+        
+        return True
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Login to Einthusan and get cookies")
+    parser.add_argument("--email", help="Einthusan email")
+    parser.add_argument("--password", "--pass", dest="password", help="Einthusan password")
+    parser.add_argument("--1password", dest="onepassword", action="store_true", 
+                        help="Get credentials from 1Password")
+    parser.add_argument("--save-credentials", action="store_true",
+                        help="Save credentials locally for future use")
+    parser.add_argument("--visible", action="store_true",
+                        help="Show browser window (for debugging)")
+    args = parser.parse_args()
+    
+    email, password = None, None
+    
+    # Try different credential sources
+    if args.onepassword:
+        print("🔑 Getting credentials from 1Password...")
+        email, password = get_credentials_from_1password()
+        if not email:
+            print("❌ Could not get credentials from 1Password")
+            print("   Make sure you have an item named 'einthusan' with email and password fields")
+            sys.exit(1)
+    elif args.email and args.password:
+        email, password = args.email, args.password
+    else:
+        # Try saved credentials
+        email, password = get_credentials_from_file()
+        if not email:
+            # Interactive prompt
+            print("Enter Einthusan credentials:")
+            email = input("  Email: ").strip()
+            password = input("  Password: ").strip()
+            
+            if args.save_credentials:
+                save_credentials(email, password)
+    
+    if not email or not password:
+        print("❌ No credentials provided")
+        sys.exit(1)
+    
+    # Login
+    success = login_and_get_cookies(email, password, headless=not args.visible)
+    
+    if success:
+        print("\n✅ Ready! You can now use einthusan-dl for premium content.")
+    else:
+        print("\n❌ Login failed. Try with --visible to debug.")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
