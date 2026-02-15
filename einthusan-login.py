@@ -91,6 +91,16 @@ def login_and_get_cookies(email: str, password: str, headless: bool = True) -> b
             page.goto("https://einthusan.tv/movie/browse/?lang=tamil", timeout=30000)
             time.sleep(2)
             
+            # Dismiss cookie/GDPR consent popup if present
+            try:
+                consent_btn = page.locator('button.qc-cmp2-summary-buttons button, [class*="qc-cmp2"] button:has-text("Agree"), [class*="qc-cmp2"] button:has-text("Accept")')
+                if consent_btn.count() > 0:
+                    consent_btn.first.click(timeout=3000)
+                    print("   Dismissed consent popup")
+                    time.sleep(1)
+            except:
+                pass  # No consent popup or already dismissed
+            
             # Click on user icon or find login trigger
             # Look for login elements
             page.wait_for_selector("#login-email", timeout=5000)
@@ -109,6 +119,17 @@ def login_and_get_cookies(email: str, password: str, headless: bool = True) -> b
                 # Try going directly to a page that requires login
                 page.goto("https://einthusan.tv/feed/home/?lang=tamil", timeout=30000)
                 time.sleep(2)
+                
+                # Dismiss consent popup again if it appears
+                try:
+                    consent_btn = page.locator('button.qc-cmp2-summary-buttons button, [class*="qc-cmp2"] button:has-text("Agree"), [class*="qc-cmp2"] button:has-text("Accept")')
+                    if consent_btn.count() > 0:
+                        consent_btn.first.click(timeout=3000)
+                        print("   Dismissed consent popup")
+                        time.sleep(1)
+                except:
+                    pass
+                    
                 page.wait_for_selector("#login-email", timeout=10000)
         
         # Fill login form
