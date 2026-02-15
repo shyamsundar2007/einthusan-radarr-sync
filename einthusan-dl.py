@@ -205,22 +205,31 @@ class EinthusanDownloader:
         title = re.sub(r"[^\w\s-]", "", url_info["title"]).replace(" ", ".")
         year = url_info.get("year", "")
         lang = url_info.get("lang", "").capitalize()
-        quality = "1080p" if url_info.get("is_premium") else "480p"
+        # Don't assume resolution - premium just means highest available for that movie
+        quality = "WEB-DL"
+        tier = "Premium" if url_info.get("is_premium") else "Free"
         
         filename = f"{title}"
         if year:
             filename += f".{year}"
-        filename += f".{lang}.{quality}.EINTHUSAN.WEB-DL.mp4"
+        filename += f".{lang}.{quality}.EINTHUSAN.mp4"
         
         output_path = output_dir / filename
 
         print(f"📥 Downloading: {url_info['title']} ({year})")
-        print(f"   Quality: {quality} ({'Premium' if url_info.get('is_premium') else 'Free tier'})")
+        print(f"   Tier: {tier} (highest quality available)")
         print(f"   Output: {output_path}")
 
         # Download with curl (more reliable than requests for large files)
+        # Added retry and continue flags for resilience
         mp4_url = url_info["mp4_url"]
-        cmd = ["curl", "-L", "-o", str(output_path), mp4_url, "--progress-bar"]
+        cmd = [
+            "curl", "-L", "-o", str(output_path), mp4_url,
+            "--progress-bar",
+            "-C", "-",           # Resume if partial file exists
+            "--retry", "3",      # Retry up to 3 times
+            "--retry-delay", "5" # Wait 5 seconds between retries
+        ]
         
         result = subprocess.run(cmd)
         if result.returncode == 0 and output_path.exists():
