@@ -76,12 +76,17 @@ def get_radarr_missing(language_filter: str = None) -> list[dict]:
             if language_filter and lang != language_filter.lower():
                 continue
                 
+            # Convert Radarr path (/data/movies/...) to local path
+            radarr_path = movie.get("path", "")
+            local_path = radarr_path.replace("/data/movies", str(DOWNLOAD_DIR))
+            
             missing.append({
                 "id": movie["id"],
                 "title": movie["title"],
                 "year": movie.get("year"),
                 "imdbId": movie.get("imdbId"),
                 "tmdbId": movie.get("tmdbId"),
+                "folder": local_path,  # Movie's expected folder
                 "language": lang,
                 "path": movie.get("path"),
             })
@@ -239,20 +244,24 @@ def main():
         print(f"   ✓ Found: {best_match['title']} ({best_match['year']}) [{best_lang}] - score {score:.2f}")
         
         # Check if file already exists locally (prevents re-download before Radarr scan)
+        movie_folder = Path(movie.get("folder", DOWNLOAD_DIR))
         match_title = re.sub(r"[^\w\s-]", "", best_match["title"]).replace(" ", ".")
         match_year = best_match.get("year", "")
-        existing = list(DOWNLOAD_DIR.glob(f"{match_title}.{match_year}.*EINTHUSAN*.mp4"))
+        # Check both the movie folder and root folder
+        existing = list(movie_folder.glob(f"*EINTHUSAN*.mp4")) if movie_folder.exists() else []
+        existing += list(DOWNLOAD_DIR.glob(f"{match_title}.{match_year}.*EINTHUSAN*.mp4"))
         if existing:
             print(f"   ⏭️ Already downloaded: {existing[0].name}")
             continue
         
         if args.dry_run:
             print(f"   📦 Would download: {best_match['url']}")
+            print(f"      → {movie_folder}/")
             continue
         
-        # Download
-        print(f"   📥 Downloading...")
-        if download_movie(best_match["url"], DOWNLOAD_DIR):
+        # Download to movie's folder (creates folder if needed)
+        print(f"   📥 Downloading to {movie_folder.name}/...")
+        if download_movie(best_match["url"], movie_folder):
             print(f"   ✓ Downloaded!")
             downloaded += 1
             # Immediately tell Radarr to rescan this specific movie
