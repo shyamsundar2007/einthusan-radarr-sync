@@ -181,7 +181,7 @@ def main():
     parser.add_argument("--lang", nargs="+", default=["tamil", "hindi", "malayalam", "telugu"],
                         help="Languages to search (default: tamil hindi malayalam telugu)")
     parser.add_argument("--limit", type=int, default=0, help="Max downloads per run (0=unlimited)")
-    parser.add_argument("--min-score", type=float, default=0.6, help="Minimum match score (0-1)")
+    parser.add_argument("--min-score", type=float, default=0.85, help="Minimum match score (0-1)")
     args = parser.parse_args()
 
     languages = args.lang if isinstance(args.lang, list) else [args.lang]
