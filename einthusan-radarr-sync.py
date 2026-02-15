@@ -178,13 +178,17 @@ def trigger_radarr_scan():
 def main():
     parser = argparse.ArgumentParser(description="Sync Radarr wanted list with Einthusan")
     parser.add_argument("--dry-run", action="store_true", help="Preview only, don't download")
-    parser.add_argument("--lang", default="tamil", help="Einthusan language to search")
+    parser.add_argument("--lang", nargs="+", default=["tamil", "hindi", "malayalam", "telugu"],
+                        help="Languages to search (default: tamil hindi malayalam telugu)")
     parser.add_argument("--limit", type=int, default=0, help="Max downloads per run (0=unlimited)")
     parser.add_argument("--min-score", type=float, default=0.6, help="Minimum match score (0-1)")
     args = parser.parse_args()
 
-    print("🔍 Checking Radarr for missing movies...")
-    missing = get_radarr_missing(language_filter=args.lang)
+    languages = args.lang if isinstance(args.lang, list) else [args.lang]
+    print(f"🔍 Checking Radarr for missing movies (languages: {', '.join(languages)})...")
+    
+    # Get missing movies without language filter - we'll search all languages
+    missing = get_radarr_missing(language_filter=None)
     
     if not missing:
         print("✓ No missing movies found")
@@ -196,30 +200,48 @@ def main():
     for movie in missing:
         title = movie["title"]
         year = movie.get("year")
+        radarr_lang = movie.get("language")
         
         print(f"🎬 {title} ({year or '?'})")
         
-        # Search Einthusan
-        match = search_einthusan(title, year, args.lang)
+        # Search Einthusan across all specified languages
+        best_match = None
+        best_lang = None
         
-        if not match:
-            print(f"   ❌ Not found on Einthusan ({args.lang})")
+        # Prioritize Radarr's detected language if it's in our search list
+        search_order = list(languages)
+        if radarr_lang and radarr_lang in search_order:
+            search_order.remove(radarr_lang)
+            search_order.insert(0, radarr_lang)
+        
+        for lang in search_order:
+            match = search_einthusan(title, year, lang)
+            if match:
+                if best_match is None or match.get("score", 0) > best_match.get("score", 0):
+                    best_match = match
+                    best_lang = lang
+                # If perfect match (>= 0.9), stop searching
+                if match.get("score", 0) >= 0.9:
+                    break
+        
+        if not best_match:
+            print(f"   ❌ Not found on Einthusan ({', '.join(languages)})")
             continue
         
-        score = match.get("score", 0)
+        score = best_match.get("score", 0)
         if score < args.min_score:
-            print(f"   ⚠️ Low match: {match['title']} ({match['year']}) - score {score:.2f}")
+            print(f"   ⚠️ Low match: {best_match['title']} ({best_match['year']}) [{best_lang}] - score {score:.2f}")
             continue
         
-        print(f"   ✓ Found: {match['title']} ({match['year']}) - score {score:.2f}")
+        print(f"   ✓ Found: {best_match['title']} ({best_match['year']}) [{best_lang}] - score {score:.2f}")
         
         if args.dry_run:
-            print(f"   📦 Would download: {match['url']}")
+            print(f"   📦 Would download: {best_match['url']}")
             continue
         
         # Download
         print(f"   📥 Downloading...")
-        if download_movie(match["url"], DOWNLOAD_DIR):
+        if download_movie(best_match["url"], DOWNLOAD_DIR):
             print(f"   ✓ Downloaded!")
             downloaded += 1
         else:
