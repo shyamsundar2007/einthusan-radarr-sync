@@ -235,6 +235,14 @@ def main():
         
         print(f"   ✓ Found: {best_match['title']} ({best_match['year']}) [{best_lang}] - score {score:.2f}")
         
+        # Check if file already exists locally (prevents re-download before Radarr scan)
+        match_title = re.sub(r"[^\w\s-]", "", best_match["title"]).replace(" ", ".")
+        match_year = best_match.get("year", "")
+        existing = list(DOWNLOAD_DIR.glob(f"{match_title}.{match_year}.*EINTHUSAN*.mp4"))
+        if existing:
+            print(f"   ⏭️ Already downloaded: {existing[0].name}")
+            continue
+        
         if args.dry_run:
             print(f"   📦 Would download: {best_match['url']}")
             continue
