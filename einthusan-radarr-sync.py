@@ -161,14 +161,17 @@ def download_movie(url: str, output_dir: Path) -> bool:
         return False
 
 
-def trigger_radarr_scan():
-    """Trigger Radarr to scan for new files."""
+def trigger_radarr_scan(movie_id: int = None):
+    """Trigger Radarr to scan for new files. If movie_id provided, scans just that movie."""
     headers = {"X-Api-Key": RADARR_API_KEY}
     try:
+        payload = {"name": "RescanMovie"}
+        if movie_id:
+            payload["movieIds"] = [movie_id]
         resp = requests.post(
             f"{RADARR_URL}/api/v3/command",
             headers=headers,
-            json={"name": "RescanMovie"}
+            json=payload
         )
         return resp.status_code == 201
     except:
@@ -252,6 +255,9 @@ def main():
         if download_movie(best_match["url"], DOWNLOAD_DIR):
             print(f"   ✓ Downloaded!")
             downloaded += 1
+            # Immediately tell Radarr to rescan this specific movie
+            if trigger_radarr_scan(movie["id"]):
+                print(f"   🔄 Radarr notified")
         else:
             print(f"   ❌ Download failed")
         
@@ -262,11 +268,12 @@ def main():
     
     if downloaded > 0:
         print(f"\n✓ Downloaded {downloaded} movie(s)")
-        print("🔄 Triggering Radarr library scan...")
+        # Per-movie scans already triggered above, but do a final full scan as backup
+        print("🔄 Final Radarr library scan...")
         if trigger_radarr_scan():
-            print("✓ Radarr scan triggered")
+            print("✓ Done")
         else:
-            print("⚠️ Could not trigger scan - run manually")
+            print("⚠️ Could not trigger final scan")
 
 
 if __name__ == "__main__":
