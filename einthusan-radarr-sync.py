@@ -22,11 +22,7 @@ import sys
 from pathlib import Path
 from difflib import SequenceMatcher
 
-try:
-    import requests
-except ImportError:
-    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "requests"])
-    import requests
+import requests
 
 # Configuration
 RADARR_URL = os.environ.get("RADARR_URL", "http://localhost:7878")

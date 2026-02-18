@@ -18,13 +18,7 @@ import sys
 import time
 from pathlib import Path
 
-try:
-    from playwright.sync_api import sync_playwright
-except ImportError:
-    print("Installing Playwright...")
-    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "playwright"])
-    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"])
-    from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright
 
 CONFIG_DIR = Path.home() / ".config" / "einthusan"
 COOKIES_FILE = CONFIG_DIR / "cookies.txt"

@@ -1,0 +1,17 @@
+[project]
+name = "einthusan-radarr-sync"
+version = "0.1.0"
+description = "Einthusan downloader with Radarr integration"
+requires-python = ">=3.10"
+dependencies = [
+    "requests",
+    "beautifulsoup4",
+]
+
+[project.optional-dependencies]
+login = ["playwright"]
+
+[project.scripts]
+einthusan-dl = "einthusan_dl:main"
+einthusan-login = "einthusan_login:main"
+einthusan-radarr-sync = "einthusan_radarr_sync:main"
