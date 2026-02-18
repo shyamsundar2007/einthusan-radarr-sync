@@ -22,14 +22,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-try:
-    import requests
-    from bs4 import BeautifulSoup
-except ImportError:
-    print("Installing dependencies...")
-    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "requests", "beautifulsoup4"])
-    import requests
-    from bs4 import BeautifulSoup
+import requests
+from bs4 import BeautifulSoup
 
 
 # Configuration
