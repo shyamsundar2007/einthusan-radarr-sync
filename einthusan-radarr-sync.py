@@ -30,16 +30,10 @@ RADARR_API_KEY = os.environ.get("RADARR_API_KEY", "***REDACTED***")
 DOWNLOAD_DIR = Path("/mnt/synology/shyamflix-media/movies")  # Direct to Plex folder
 EINTHUSAN_SCRIPT = Path(__file__).parent / "einthusan-dl"
 
-# Language mapping (Radarr language ID -> Einthusan language)
-LANGUAGE_MAP = {
-    "tamil": "tamil",
-    "hindi": "hindi",
-    "telugu": "telugu",
-    "malayalam": "malayalam",
-    "kannada": "kannada",
-    "bengali": "bengali",
-    "marathi": "marathi",
-    "punjabi": "punjabi",
+# Indian languages supported by Einthusan
+INDIAN_LANGUAGES = {
+    "tamil", "hindi", "telugu", "malayalam", 
+    "kannada", "bengali", "marathi", "punjabi",
 }
 
 
@@ -50,8 +44,12 @@ def similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 
 
-def get_radarr_missing(language_filter: str = None) -> list[dict]:
-    """Get missing movies from Radarr."""
+def get_radarr_missing(indian_only: bool = True) -> list[dict]:
+    """Get missing movies from Radarr.
+    
+    Args:
+        indian_only: If True, only return movies with Indian language originals
+    """
     headers = {"X-Api-Key": RADARR_API_KEY}
     
     # Get all movies
@@ -68,8 +66,8 @@ def get_radarr_missing(language_filter: str = None) -> list[dict]:
             if movie.get("originalLanguage"):
                 lang = movie["originalLanguage"].get("name", "").lower()
             
-            # Filter by language if specified
-            if language_filter and lang != language_filter.lower():
+            # Skip non-Indian movies if filtering enabled
+            if indian_only and lang not in INDIAN_LANGUAGES:
                 continue
                 
             # Convert Radarr path (/data/movies/...) to local path
@@ -186,13 +184,16 @@ def main():
                         help="Languages to search (default: tamil hindi malayalam telugu)")
     parser.add_argument("--limit", type=int, default=0, help="Max downloads per run (0=unlimited)")
     parser.add_argument("--min-score", type=float, default=0.85, help="Minimum match score (0-1)")
+    parser.add_argument("--all-movies", action="store_true", help="Search all missing movies, not just Indian language")
     args = parser.parse_args()
 
     languages = args.lang if isinstance(args.lang, list) else [args.lang]
-    print(f"🔍 Checking Radarr for missing movies (languages: {', '.join(languages)})...")
+    indian_only = not args.all_movies
+    scope = "Indian" if indian_only else "all"
+    print(f"🔍 Checking Radarr for missing {scope} movies (languages: {', '.join(languages)})...")
     
-    # Get missing movies without language filter - we'll search all languages
-    missing = get_radarr_missing(language_filter=None)
+    # Get missing movies - by default only Indian language films
+    missing = get_radarr_missing(indian_only=indian_only)
     
     if not missing:
         print("✓ No missing movies found")
