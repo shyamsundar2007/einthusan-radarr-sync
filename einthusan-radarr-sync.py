@@ -24,11 +24,31 @@ from difflib import SequenceMatcher
 
 import requests
 
-# Configuration
+# Configuration - load from environment or .env file
+def _load_env():
+    """Load .env file if present."""
+    env_file = Path(__file__).parent / ".env"
+    if env_file.exists():
+        with open(env_file) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, _, value = line.partition("=")
+                    # Strip quotes if present
+                    value = value.strip().strip('"').strip("'")
+                    os.environ.setdefault(key.strip(), value)
+
+_load_env()
+
 RADARR_URL = os.environ.get("RADARR_URL", "http://localhost:7878")
-RADARR_API_KEY = os.environ.get("RADARR_API_KEY", "***REDACTED***")
-DOWNLOAD_DIR = Path("/mnt/synology/shyamflix-media/movies")  # Direct to Plex folder
+RADARR_API_KEY = os.environ.get("RADARR_API_KEY")
+DOWNLOAD_DIR = Path(os.environ.get("DOWNLOAD_DIR", "/mnt/synology/shyamflix-media/movies"))
 EINTHUSAN_SCRIPT = Path(__file__).parent / "einthusan-dl"
+
+if not RADARR_API_KEY:
+    print("❌ RADARR_API_KEY not set. Create a .env file or export the variable.")
+    print("   See .env.example for reference.")
+    sys.exit(1)
 
 # Indian languages supported by Einthusan
 INDIAN_LANGUAGES = {
