@@ -6,8 +6,9 @@ Download South Asian movies from Einthusan.tv and integrate with Radarr/Plex.
 
 - **Search & Download** movies from Einthusan (Tamil, Hindi, Telugu, Malayalam, etc.)
 - **Radarr Integration** — auto-download missing movies from your wanted list
-- **Premium Support** — Playwright-based login for HD/1080p quality
-- **Plex-friendly naming** — `Movie.Name.Year.Lang.1080p.EINTHUSAN.WEB-DL.mp4`
+- **Premium Support** — Playwright-based login for premium streams; resolution depends on the movie
+- **Quality selection** — probes MP4 and HLS streams and downloads the highest resolution offered
+- **Plex-friendly naming** — `Movie.Name.Year.Lang.WEB-DL.EINTHUSAN.mp4`
 
 ## Installation
 
@@ -18,6 +19,11 @@ cd einthusan-radarr-sync
 # Scripts auto-create a .venv on first run
 ./einthusan-dl --help
 ```
+
+Install `ffprobe` and `ffmpeg` (both provided by FFmpeg) on the host. The downloader uses
+`ffprobe` to compare actual stream resolutions and `ffmpeg` when an HLS stream is best.
+It reports the selected resolution during download. Premium access does not guarantee HD
+when Einthusan only supplies a lower resolution source for a movie.
 
 ## Usage
 
@@ -48,7 +54,7 @@ cd einthusan-radarr-sync
 ./einthusan-radarr-sync --lang tamil
 ```
 
-### Login for Premium (HD quality)
+### Login for Premium
 ```bash
 # Interactive login
 ./einthusan-login

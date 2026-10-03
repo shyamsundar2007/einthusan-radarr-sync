@@ -174,6 +174,9 @@ def download_movie(url: str, output_dir: Path) -> bool:
             text=True,
             timeout=1800  # 30 min timeout for large files
         )
+        for line in result.stdout.splitlines():
+            if "Tier:" in line or "✓ Downloaded:" in line or "✗" in line:
+                print(f"   {line.strip()}")
         return "Downloaded:" in result.stdout
     except Exception as e:
         print(f"  ⚠️ Download error: {e}")

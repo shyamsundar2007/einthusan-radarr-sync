@@ -10,7 +10,7 @@ Usage:
 Requires: pip install requests beautifulsoup4
 Cookies: ~/.config/einthusan/cookies.txt (Netscape format) or auto-login with credentials
 
-Output: ~/downloads/einthusan/Movie.Name.Year.Lang.1080p.EINTHUSAN.WEB-DL.mp4
+Output: ~/downloads/einthusan/Movie.Name.Year.Lang.WEB-DL.EINTHUSAN.mp4
 """
 
 import argparse
@@ -21,6 +21,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
@@ -186,10 +187,72 @@ class EinthusanDownloader:
         except Exception as e:
             return {"error": f"Failed to decode: {e}"}
 
+    def _hls_streams(self, url: str) -> list[dict]:
+        """Expand an HLS master playlist, or keep a single media playlist."""
+        try:
+            response = self.session.get(url, timeout=20)
+            response.raise_for_status()
+            lines = [line.strip() for line in response.text.splitlines() if line.strip()]
+        except requests.RequestException as e:
+            print(f"   ⚠️ Could not inspect HLS playlist: {e.__class__.__name__}")
+            return []
+
+        streams = []
+        for index, line in enumerate(lines):
+            if line.startswith("#EXT-X-STREAM-INF:"):
+                next_url = next((item for item in lines[index + 1:] if not item.startswith("#")), None)
+                if next_url:
+                    streams.append({"kind": "hls", "url": urljoin(url, next_url)})
+        return streams or [{"kind": "hls", "url": url}]
+
+    @staticmethod
+    def _probe_video(url: str) -> tuple[int, int] | None:
+        """Read the encoded video dimensions without downloading the whole file."""
+        try:
+            result = subprocess.run(
+                ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                 "-show_entries", "stream=width,height", "-of", "json", url],
+                capture_output=True, text=True, timeout=45,
+            )
+            if result.returncode == 0:
+                stream = json.loads(result.stdout).get("streams", [{}])[0]
+                width, height = int(stream["width"]), int(stream["height"])
+                if width > 0 and height > 0:
+                    return width, height
+        except (FileNotFoundError, subprocess.TimeoutExpired, ValueError, KeyError, IndexError):
+            pass
+        return None
+
+    def select_best_stream(self, url_info: dict) -> dict | None:
+        """Choose the highest resolution offered by the MP4 and HLS links."""
+        candidates = []
+        if url_info.get("mp4_url"):
+            candidates.append({"kind": "mp4", "url": url_info["mp4_url"]})
+        if url_info.get("hls_url"):
+            candidates.extend(self._hls_streams(url_info["hls_url"]))
+
+        for candidate in candidates:
+            dimensions = self._probe_video(candidate["url"])
+            if dimensions:
+                candidate["width"], candidate["height"] = dimensions
+
+        probed = [candidate for candidate in candidates if "height" in candidate]
+        if not probed:
+            return None
+        # Keep the directly downloadable MP4 when the resolutions are equal.
+        return max(probed, key=lambda item: (
+            item["width"] * item["height"], item["height"], item["kind"] == "mp4"
+        ))
+
     def download(self, url_info: dict, output_dir: Path = None) -> Path:
         """Download the movie."""
         if "error" in url_info:
             print(f"✗ Error: {url_info['error']}")
+            return None
+
+        stream = self.select_best_stream(url_info)
+        if not stream:
+            print("✗ Could not verify the resolution of any available stream (ffprobe required)")
             return None
 
         output_dir = output_dir or DOWNLOAD_DIR
@@ -209,29 +272,39 @@ class EinthusanDownloader:
         filename += f".{lang}.{quality}.EINTHUSAN.mp4"
         
         output_path = output_dir / filename
+        temp_path = output_dir / f"{output_path.stem}.part.mp4"
 
         print(f"📥 Downloading: {url_info['title']} ({year})")
-        print(f"   Tier: {tier} (highest quality available)")
+        print(f"   Tier: {tier}; selected {stream['width']}x{stream['height']} {stream['kind'].upper()}")
         print(f"   Output: {output_path}")
 
-        # Download with curl (more reliable than requests for large files)
-        # Added retry and continue flags for resilience
-        mp4_url = url_info["mp4_url"]
-        cmd = [
-            "curl", "-L", "-o", str(output_path), mp4_url,
-            "--progress-bar",
-            "-C", "-",           # Resume if partial file exists
-            "--retry", "3",      # Retry up to 3 times
-            "--retry-delay", "5" # Wait 5 seconds between retries
-        ]
+        # A partial file may belong to a different stream from an earlier run.
+        temp_path.unlink(missing_ok=True)
+        if stream["kind"] == "mp4":
+            cmd = [
+                "curl", "--fail", "-L", "-o", str(temp_path), stream["url"],
+                "--progress-bar", "--retry", "3", "--retry-delay", "5",
+            ]
+        else:
+            # ffmpeg remuxes the selected HLS rendition without re-encoding it.
+            cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                   "-i", stream["url"], "-c", "copy", str(temp_path)]
         
-        result = subprocess.run(cmd)
-        if result.returncode == 0 and output_path.exists():
+        try:
+            result = subprocess.run(cmd)
+        except FileNotFoundError:
+            print(f"✗ Download failed: {cmd[0]} is not installed")
+            return None
+        if result.returncode == 0 and temp_path.exists() and self._probe_video(str(temp_path)) == (
+            stream["width"], stream["height"]
+        ):
+            temp_path.replace(output_path)
             size_mb = output_path.stat().st_size / (1024 * 1024)
-            print(f"✓ Downloaded: {output_path.name} ({size_mb:.1f} MB)")
+            print(f"✓ Downloaded: {output_path.name} ({size_mb:.1f} MB, {stream['width']}x{stream['height']})")
             return output_path
         else:
-            print(f"✗ Download failed")
+            temp_path.unlink(missing_ok=True)
+            print("✗ Download failed or video resolution did not match the selected stream")
             return None
 
 
